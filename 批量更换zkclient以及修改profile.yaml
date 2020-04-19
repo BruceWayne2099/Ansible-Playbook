@@ -1,0 +1,52 @@
+- hosts: Ez4ip_SG_Ali_devicemanageserver        #默认执行hosts里Ez4ip_SG_Ali_devicemanageserver组里的所有IP
+  remote_user: root
+  any_errors_fatal: no
+  gather_facts: no        #不采集对方机器的数据，提高执行速度
+  serial:
+  - 5     #5台机器一组
+  tasks:
+  - name: 警告！如果后悔，请ctrl+c停止，3秒钟后本脚本启动
+    pause: seconds=3
+
+  - name: 拷贝zkclient到对方服务器
+    copy: src=/etc/ansible/chenplay/zkclient.zip
+          dest=/opt/ 
+          owner=root group=root mode=0755
+
+  - name: yum install
+    yum:
+      state: latest
+      name:
+      - unzip
+      - zip
+      - lrzsz
+      - telnet
+      - iftop
+
+  - name: 解压缩zkclient.zip
+    shell: cd /opt && yes|unzip zkclient.zip && rm -rf /opt/zkclient && yes|cp -rf /opt/build/* /opt
+
+  - name: 给予zkclient文件可操作权限
+    file:
+      path: /opt/zkclient
+      mode: u=rwx,g=rx,o=rx
+      recurse: yes
+  
+  - name: 重启zkclient
+    shell: cd /opt/zkclient && ./stop.sh && ./start.sh
+
+  - name: 添加Apollo信息
+    blockinfile: |
+      dest=/etc/profile
+      backup=yes
+      content="export public_cloud_config_host=172.21.254.7
+          export public_cloud_config_port=28080
+          export public_cloud_config_group=default
+         export public_cloud_config_namespace=imou.commonsource.mysql,imou.commonsource.cs,imou.commonsource.redis,imou.commonsource.mq,imou.commonsource.lb,imou.saascommonconfig,imou.originalcommonconfig,application"
+
+  - name: 添加/etc/Hosts信息
+    blockinfile: |
+      dest=/etc/hosts
+      backup=yes
+      content="172.21.254.6 dahuazkserver
+         172.21.254.7 apolloserver"

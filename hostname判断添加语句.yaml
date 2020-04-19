@@ -1,0 +1,121 @@
+- hosts: all        #默认执行hosts里的所有IP                                                   
+  remote_user: root
+  any_errors_fatal: no
+  #gather_facts: no        #采集对方机器的数据
+  serial:
+  - 5     #5台机器一组
+  tasks:
+  - name: FBI WARNING！！！如果后悔执行本playbook，请ctrl+c停止，否则5秒钟后继续...
+    pause: seconds=5
+ 
+  - name: 判断share目录是否存在
+    stat:
+      path: /share/soft/zkclient.zip
+    ignore_errors: True
+    register: stat_result
+
+  - name: 直接挂载
+    shell: umount /share && mount -t nfs -o acl,rw,intr,soft,nolock,rsize=8192,wsize=8192 10.30.200.247:/share /share
+    when: stat_result.stat.exists == True
+
+  - name: 创建share目录
+    file:
+      path: /share/soft
+      state: directory
+    when: stat_result.stat.exists == False
+
+  - name: 挂载share盘
+    shell: mount -t nfs -o acl,rw,intr,soft,nolock,rsize=8192,wsize=8192 10.30.200.247:/share /share
+    when: stat_result.stat.exists == False
+
+  - name: 拷贝showpayload.py
+    copy: 
+      src=/share/yunwei/showpayload.py
+      dest=/mnt/
+      mode=0644
+
+  - name: 修改zabbix-agent.conf的hostname
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^Hostname=
+      line: Hostname={{ ansible_hostname }}
+
+#  - name: 修改zabbix-agent.conf的HostMetadataItem
+#    lineinfile:
+#      dest: /etc/zabbix/zabbix_agentd.conf
+#      regexp: ^HostMetadataItem
+#      line: HostMetadataItem=system.uname
+
+  - name: 修改zabbix-agent.conf的Server
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^Server=
+      line: Server=10.30.200.247
+
+  - name: 修改zabbix-agent.conf的ServerActive
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^ServerActive=
+      line: ServerActive=10.30.200.247
+
+  - name: 添加payload自定义监控项
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      insertafter: HostMetadataItem=system.uname
+      line: UserParameter=payload[*],sudo python /mnt/showpayload.py $1
+    when: "'devicehttpproxy' or 'devicemanageserver' in '{{ ansible_hostname }}'"
+
+  - name: 重启zabbix-agent
+    command: systemctl restart zabbix-agent
+ 
+  - name: 修改/etc/profile
+    lineinfile:
+      dest: /etc/profile
+      regexp: export public_cloud_config_namespace=
+      line: export public_cloud_config_namespace=imou.commonsource.mysql,imou.commonsource.cs,imou.commonsource.redis,imou.commonsource.mq,imou.commonsource.lb,imou.saascommonconfig,imou.originalcommonconfig,application
+
+  - name: sudoers添加角色
+    blockinfile: |
+      dest=/etc/sudoers
+      backup=yes
+      content="zabbix  ALL=(root) NOPASSWD: /usr/bin/python
+      Defaults:zabbix   !requiretty"
+
+  - name: 拷贝zkclient到/opt
+    copy: 
+      src=/share/soft/zkclient.zip
+      dest=/opt/
+      mode=0644
+
+  - name: 拷贝nginxsslproxy到/opt
+    copy: 
+      src=/share/soft/nginxsslproxy.zip
+      dest=/opt/
+      mode=0644
+    when: "'devicehttpproxy' in '{{ ansible_hostname }}'"
+
+  - name: 解压缩nginxsslproxy.zip
+    unarchive:
+      src=/opt/nginxsslproxy.zip
+      dest=/opt
+      remote_src=yes
+    when: "'devicehttpproxy' in '{{ ansible_hostname }}'"
+
+  - name: 启动nginxsslproxy
+    shell: cd /opt/nginxsslproxy && ./start_nginxsslproxy.sh
+    when: "'devicehttpproxy' in '{{ ansible_hostname }}'"
+
+  - name: 解压缩zkclient
+    unarchive:
+      src=/opt/zkclient.zip
+      dest=/opt
+      remote_src=yes
+
+  - name: 复制build/zkclient到/opt
+    shell: mv /opt/build/zkclient /opt 
+
+  - name: 给予zkclient X权限
+    shell: chmod +x /opt/zkclient/*
+
+  - name: 启动zkclient
+    shell: cd /opt/zkclient && ./start.sh

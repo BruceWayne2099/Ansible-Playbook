@@ -1,0 +1,24 @@
+- hosts: all        #默认执行hosts里的所有IP
+  remote_user: root
+  any_errors_fatal: no
+  gather_facts: yes       #不采集对方机器的数据，提高执行速度
+  serial:
+  - 5     #5台机器一组
+  vars:
+    innerIP: "{{ ansible_default_ipv4.address  }}"
+  tasks:
+      # - debug: var=ansible_all_ipv4_addresses
+  - name: 请确认内网IP是否正确
+    debug: var=ansible_default_ipv4.address 
+
+  - name: 警告！如果后悔执行本playbook，请ctrl+c停止，否则3秒后自动继续
+    pause: seconds=3
+
+  - name: 添加内网IP到/etc/profile
+    lineinfile:
+        dest: /etc/profile
+        regexp: ^export host_inner_ipaddr=
+        line: export host_inner_ipaddr={{ innerIP }}
+
+
+# 获取对方的内网IP，然后替换/etc/profile的host_inner_ipaddr=这行

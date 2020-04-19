@@ -1,0 +1,62 @@
+- hosts: all        #默认执行hosts里的所有IP                                                   
+  remote_user: root
+  any_errors_fatal: no
+  #gather_facts: no        #不采集对方机器的数据，提高执行速度
+  serial:
+  - 5     #5台机器一组
+  tasks:
+  - name: FBI WARNING！！！如果后悔执行本playbook，请ctrl+c停止，否则5秒钟后继续...
+    pause: seconds=5
+ 
+  - name: 判断share目录是否存在
+    stat:
+      path: /share/soft/zkclient.zip
+    ignore_errors: True
+    register: stat_result
+
+  - name: 直接挂载
+    shell: umount /share && mount -t nfs -o acl,rw,intr,soft,nolock,rsize=8192,wsize=8192 10.30.200.247:/share /share
+    when: stat_result.stat.exists == True
+
+  - name: 创建share目录
+    file:
+      path: /share/soft
+      state: directory
+    when: stat_result.stat.exists == False
+
+  - name: 挂载share盘
+    shell: mount -t nfs -o acl,rw,intr,soft,nolock,rsize=8192,wsize=8192 10.30.200.247:/share /share
+    when: stat_result.stat.exists == False
+
+  - name: 修改zabbix-agent.conf的hostname
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^Hostname=
+      line: Hostname={{ ansible_hostname }}
+
+  - name: 修改zabbix-agent.conf的HostMetadataItem
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^HostMetadataItem
+      line: HostMetadataItem=system.uname
+
+  - name: 修改zabbix-agent.conf的Server
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^Server=
+      line: Server=10.30.200.247
+
+  - name: 修改zabbix-agent.conf的ServerActive
+    lineinfile:
+      dest: /etc/zabbix/zabbix_agentd.conf
+      regexp: ^ServerActive=
+      line: ServerActive=10.30.200.247
+
+  - name: 重启zabbix-agent
+    command: systemctl restart zabbix-agent
+ 
+  - name: 修改/etc/profile
+    lineinfile:
+      dest: /etc/profile
+      regexp: export public_cloud_config_namespace=
+      line: export public_cloud_config_namespace=imou.commonsource.mysql,imou.commonsource.cs,imou.commonsource.redis,imou.commonsource.mq,imou.commonsource.lb,imou.saascommonconfig,imou.originalcommonconfig,application
